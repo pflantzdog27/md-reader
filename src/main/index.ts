@@ -1,12 +1,4 @@
-import {
-  app,
-  BrowserWindow,
-  ipcMain,
-  dialog,
-  Menu,
-  session,
-  safeStorage
-} from 'electron'
+import { app, BrowserWindow, ipcMain, dialog, Menu, session, safeStorage } from 'electron'
 import { join } from 'path'
 import { readFileSync, writeFileSync, existsSync, statSync } from 'fs'
 import { spawn, ChildProcess } from 'child_process'
@@ -35,9 +27,12 @@ function loadVoices(): Promise<{ name: string; locale: string }[]> {
         .trim()
         .split('\n')
         .map((line) => {
-          const match = line.match(/^(\S+)\s+(\S+)/)
+          // Format: "Name (optional qualifier) xx_XX    # Sample text"
+          // Names can contain spaces, parens, accented chars
+          // Match: everything before a locale pattern (xx_XX), then # starts the sample
+          const match = line.match(/^(.+?)\s+([a-z]{2}_[A-Za-z0-9]{2,3})\s+#/)
           if (!match) return null
-          return { name: match[1], locale: match[2] }
+          return { name: match[1].trim(), locale: match[2] }
         })
         .filter(Boolean) as { name: string; locale: string }[]
       resolve(voices)
@@ -133,11 +128,7 @@ function createMenu(): void {
   const template: Electron.MenuItemConstructorOptions[] = [
     {
       label: app.name,
-      submenu: [
-        { role: 'about' },
-        { type: 'separator' },
-        { role: 'quit' }
-      ]
+      submenu: [{ role: 'about' }, { type: 'separator' }, { role: 'quit' }]
     },
     {
       label: 'File',
@@ -148,7 +139,8 @@ function createMenu(): void {
           click: async (): Promise<void> => {
             if (!mainWindow) return
             const result = await handleOpenFile()
-            if (result.success) {
+            // Send result to renderer for both success and error (but not cancel)
+            if (result.success || (result.error && result.error !== 'Cancelled')) {
               mainWindow.webContents.send('file-opened', result)
             }
           }
@@ -235,55 +227,52 @@ function registerIpcHandlers(): void {
   })
 
   // Speak
-  ipcMain.handle(
-    'speak',
-    async (_event, text: string, voice: string, rate: number) => {
-      // Validate voice against allowlist
-      const validVoice = voiceAllowlist.find((v) => v.name === voice)
-      if (!validVoice) {
-        return { success: false, error: 'Invalid voice selected.' }
-      }
-
-      // Validate rate as integer in range
-      const rateInt = Math.round(rate)
-      if (rateInt < 90 || rateInt > 350 || !Number.isFinite(rateInt)) {
-        return { success: false, error: 'Invalid speech rate.' }
-      }
-
-      // Kill any existing process
-      killSayProcess()
-
-      try {
-        // spawn say with voice and rate, text via stdin
-        sayProcess = spawn('/usr/bin/say', ['-v', validVoice.name, '-r', String(rateInt)], {
-          stdio: ['pipe', 'ignore', 'ignore']
-        })
-
-        sayProcess.stdin!.write(text)
-        sayProcess.stdin!.end()
-
-        sendTtsState('playing')
-
-        sayProcess.on('close', (code) => {
-          sayProcess = null
-          if (code === 0) {
-            sendTtsState('finished')
-          } else {
-            sendTtsState('stopped')
-          }
-        })
-
-        sayProcess.on('error', (err) => {
-          sayProcess = null
-          sendTtsState('error', err.message)
-        })
-
-        return { success: true }
-      } catch (err) {
-        return { success: false, error: 'Failed to start speech.' }
-      }
+  ipcMain.handle('speak', async (_event, text: string, voice: string, rate: number) => {
+    // Validate voice against allowlist
+    const validVoice = voiceAllowlist.find((v) => v.name === voice)
+    if (!validVoice) {
+      return { success: false, error: 'Invalid voice selected.' }
     }
-  )
+
+    // Validate rate as integer in range
+    const rateInt = Math.round(rate)
+    if (rateInt < 90 || rateInt > 350 || !Number.isFinite(rateInt)) {
+      return { success: false, error: 'Invalid speech rate.' }
+    }
+
+    // Kill any existing process
+    killSayProcess()
+
+    try {
+      // spawn say with voice and rate, text via stdin
+      sayProcess = spawn('/usr/bin/say', ['-v', validVoice.name, '-r', String(rateInt)], {
+        stdio: ['pipe', 'ignore', 'ignore']
+      })
+
+      sayProcess.stdin!.write(text)
+      sayProcess.stdin!.end()
+
+      sendTtsState('playing')
+
+      sayProcess.on('close', (code) => {
+        sayProcess = null
+        if (code === 0) {
+          sendTtsState('finished')
+        } else {
+          sendTtsState('stopped')
+        }
+      })
+
+      sayProcess.on('error', (err) => {
+        sayProcess = null
+        sendTtsState('error', err.message)
+      })
+
+      return { success: true }
+    } catch {
+      return { success: false, error: 'Failed to start speech.' }
+    }
+  })
 
   // Pause speech
   ipcMain.handle('pause-speech', async () => {
@@ -323,47 +312,43 @@ function registerIpcHandlers(): void {
   })
 
   // Transform content via OpenAI
-  ipcMain.handle(
-    'transform',
-    async (_event, markdown: string, prompt: string) => {
-      const apiKey = loadApiKey()
-      if (!apiKey) {
-        return { success: false, error: 'No OpenAI API key configured.' }
-      }
-
-      try {
-        // Dynamic import to avoid loading OpenAI at startup
-        const { default: OpenAI } = await import('openai')
-        const client = new OpenAI({ apiKey })
-
-        const response = await client.chat.completions.create({
-          model: 'gpt-4o-mini',
-          messages: [
-            {
-              role: 'system',
-              content: `You are an expert content transformer. Rewrite the following markdown document according to the user's instructions. CRITICAL: Preserve ALL key information, facts, data points, and concepts from the original. The reader must be able to learn everything from the original by reading your version. Output plain text (no markdown formatting).`
-            },
-            {
-              role: 'user',
-              content: `Instructions: ${prompt}\n\nDocument:\n${markdown}`
-            }
-          ],
-          temperature: 0.7
-        })
-
-        const result = response.choices[0]?.message?.content
-        if (!result) {
-          return { success: false, error: 'Empty response from OpenAI.' }
-        }
-
-        return { success: true, result }
-      } catch (err: unknown) {
-        const message =
-          err instanceof Error ? err.message : 'OpenAI request failed.'
-        return { success: false, error: message }
-      }
+  ipcMain.handle('transform', async (_event, markdown: string, prompt: string) => {
+    const apiKey = loadApiKey()
+    if (!apiKey) {
+      return { success: false, error: 'No OpenAI API key configured.' }
     }
-  )
+
+    try {
+      // Dynamic import to avoid loading OpenAI at startup
+      const { default: OpenAI } = await import('openai')
+      const client = new OpenAI({ apiKey })
+
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          {
+            role: 'system',
+            content: `You are an expert content transformer. Rewrite the following markdown document according to the user's instructions. CRITICAL: Preserve ALL key information, facts, data points, and concepts from the original. The reader must be able to learn everything from the original by reading your version. Output plain text (no markdown formatting).`
+          },
+          {
+            role: 'user',
+            content: `Instructions: ${prompt}\n\nDocument:\n${markdown}`
+          }
+        ],
+        temperature: 0.7
+      })
+
+      const result = response.choices[0]?.message?.content
+      if (!result) {
+        return { success: false, error: 'Empty response from OpenAI.' }
+      }
+
+      return { success: true, result }
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : 'OpenAI request failed.'
+      return { success: false, error: message }
+    }
+  })
 }
 
 // --- App lifecycle ---

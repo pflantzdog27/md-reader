@@ -67,7 +67,13 @@ function App(): React.JSX.Element {
   const markdownToText = useCallback(async (md: string): Promise<string> => {
     try {
       const file = await remark().use(strip).process(md)
-      return String(file).replace(/\n{3,}/g, '\n\n').trim()
+      let text = String(file)
+      // Clean up table formatting for TTS (strip-markdown leaves tables as-is)
+      text = text.replace(/\|[-:| ]+\|/g, '') // remove separator rows like |---|---|
+      text = text.replace(/\|/g, ', ') // replace pipes with commas
+      text = text.replace(/, ,/g, ',') // clean up double commas
+      text = text.replace(/\n{3,}/g, '\n\n') // collapse excess newlines
+      return text.trim()
     } catch {
       return md // fallback to raw content
     }
@@ -100,15 +106,14 @@ function App(): React.JSX.Element {
       return
     }
 
-    const contentToRead = readTransformed && transformedContent
-      ? transformedContent
-      : rawContent
+    const contentToRead = readTransformed && transformedContent ? transformedContent : rawContent
 
     if (!contentToRead) return
 
-    const text = readTransformed && transformedContent
-      ? transformedContent // already plain text from OpenAI
-      : await markdownToText(contentToRead)
+    const text =
+      readTransformed && transformedContent
+        ? transformedContent // already plain text from OpenAI
+        : await markdownToText(contentToRead)
 
     const wpm = speedToWpm(speed)
     await window.api.speak(text, selectedVoice, wpm)

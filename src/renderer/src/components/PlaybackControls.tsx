@@ -54,12 +54,7 @@ function PlaybackControls({
               ▶
             </button>
           )}
-          <button
-            className="btn btn-control"
-            onClick={onStop}
-            disabled={!canStop}
-            title="Stop"
-          >
+          <button className="btn btn-control" onClick={onStop} disabled={!canStop} title="Stop">
             ⏹
           </button>
         </div>
@@ -99,9 +94,7 @@ function PlaybackControls({
       </div>
 
       {(isPlaying || isPaused) && (
-        <div className="playback-status">
-          {isPlaying ? 'Playing...' : 'Paused'}
-        </div>
+        <div className="playback-status">{isPlaying ? 'Playing...' : 'Paused'}</div>
       )}
     </div>
   )

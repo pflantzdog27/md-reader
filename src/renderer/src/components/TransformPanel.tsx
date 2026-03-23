@@ -10,10 +10,24 @@ interface Props {
 }
 
 const PRESETS = [
-  { label: '6th Grader', prompt: 'Explain this like I\'m a 6th grader. Use simple words and short sentences.' },
-  { label: 'Fairytale', prompt: 'Rewrite this as an engaging fairytale narrative for adults. Make it entertaining but preserve all the information.' },
-  { label: 'Executive Summary', prompt: 'Rewrite this as a concise executive summary. Use clear, professional language.' },
-  { label: 'Podcast Script', prompt: 'Rewrite this as a conversational podcast script, as if explaining to a listener. Be engaging and natural.' }
+  {
+    label: '6th Grader',
+    prompt: "Explain this like I'm a 6th grader. Use simple words and short sentences."
+  },
+  {
+    label: 'Fairytale',
+    prompt:
+      'Rewrite this as an engaging fairytale narrative for adults. Make it entertaining but preserve all the information.'
+  },
+  {
+    label: 'Executive Summary',
+    prompt: 'Rewrite this as a concise executive summary. Use clear, professional language.'
+  },
+  {
+    label: 'Podcast Script',
+    prompt:
+      'Rewrite this as a conversational podcast script, as if explaining to a listener. Be engaging and natural.'
+  }
 ]
 
 function TransformPanel({
@@ -27,13 +41,11 @@ function TransformPanel({
   const [customPrompt, setCustomPrompt] = useState('')
   const [apiKeyInput, setApiKeyInput] = useState('')
   const [showApiKeyInput, setShowApiKeyInput] = useState(!hasApiKey)
-  const [apiKeySaved, setApiKeySaved] = useState(hasApiKey)
 
   const handleSaveKey = async (): Promise<void> => {
     if (!apiKeyInput.trim()) return
     const success = await onSaveApiKey(apiKeyInput.trim())
     if (success) {
-      setApiKeySaved(true)
       setShowApiKeyInput(false)
       setApiKeyInput('')
     }
@@ -45,7 +57,7 @@ function TransformPanel({
     }
   }
 
-  if (showApiKeyInput && !apiKeySaved) {
+  if (showApiKeyInput) {
     return (
       <div className="transform-panel">
         <h3>AI Transform</h3>
@@ -62,6 +74,11 @@ function TransformPanel({
           <button className="btn btn-primary" onClick={handleSaveKey}>
             Save Key
           </button>
+          {hasApiKey && (
+            <button className="btn btn-text" onClick={() => setShowApiKeyInput(false)}>
+              Cancel
+            </button>
+          )}
         </div>
         <p className="hint">Your key is encrypted and stored locally.</p>
       </div>

@@ -47,8 +47,7 @@ const api: ElectronAPI = {
   stopSpeech: () => ipcRenderer.invoke('stop-speech'),
   hasApiKey: () => ipcRenderer.invoke('has-api-key'),
   saveApiKey: (key) => ipcRenderer.invoke('save-api-key', key),
-  transform: (markdown, prompt) =>
-    ipcRenderer.invoke('transform', markdown, prompt),
+  transform: (markdown, prompt) => ipcRenderer.invoke('transform', markdown, prompt),
   onTtsStateChanged: (callback) => {
     ipcRenderer.on('tts-state-changed', (_event, data) => callback(data))
   },
