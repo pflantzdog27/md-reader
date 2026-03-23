@@ -10,6 +10,7 @@ files:
   - '!{.env,.env.*,.npmrc,pnpm-lock.yaml}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!docs/*'
+  - '!test-files/*'
 asarUnpack:
   - resources/**
 mac:
@@ -17,7 +18,9 @@ mac:
   target:
     - dmg
     - zip
+  entitlements: build/entitlements.mac.plist
   entitlementsInherit: build/entitlements.mac.plist
+  identity: null
   notarize: false
 dmg:
   artifactName: ${name}-${version}.${ext}
